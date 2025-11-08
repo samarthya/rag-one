@@ -1,0 +1,33 @@
+WSL and Ollama Integration Guide
+
+Running Ollama on Windows and Accessing from WSL:
+
+Step 1: Install Ollama on Windows
+- Download Ollama from ollama.ai
+- Install and run the Ollama service on Windows
+- The service will listen on localhost:11434
+
+Step 2: Configure WSL to Access Windows Services
+From WSL, you can access Windows localhost services using:
+- localhost (in most WSL2 configurations)
+- The Windows host IP address
+
+Step 3: Test Connection
+Run this command from WSL to test Ollama connectivity:
+curl http://localhost:11434/api/tags
+
+Step 4: Pull Models
+On Windows, run:
+ollama pull llama2
+
+This downloads the llama2 model which can be used by RAG One.
+
+Common Issues:
+- Firewall blocking: Ensure Windows Firewall allows connections on port 11434
+- WSL networking: Use the correct IP address to reach Windows from WSL
+- Model not found: Make sure to pull the model on Windows first
+
+Best Practices:
+- Keep Ollama updated on Windows
+- Pull models before running RAG One
+- Test connectivity before indexing documents

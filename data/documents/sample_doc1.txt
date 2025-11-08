@@ -1,0 +1,26 @@
+RAG One System Overview
+
+RAG One is a Retrieval-Augmented Generation system built with LangChain and Ollama.
+
+Key Features:
+- Document indexing and semantic search
+- Integration with Ollama running on Windows (accessible from WSL)
+- Support for multiple document formats (PDF, TXT, DOCX)
+- Both CLI and web-based user interfaces
+- Vector store using ChromaDB for efficient retrieval
+
+Architecture:
+The system uses a three-stage process:
+1. Document Loading: Documents are loaded from the data/documents directory
+2. Embedding: Text is converted to vector embeddings using sentence transformers
+3. Retrieval: Relevant document chunks are retrieved based on semantic similarity
+4. Generation: Ollama LLM generates answers using retrieved context
+
+Configuration:
+- Ollama URL: http://localhost:11434 (Windows host accessible from WSL)
+- Default model: llama2
+- Embedding model: sentence-transformers/all-MiniLM-L6-v2
+- Vector store: ChromaDB with persistent storage
+
+Usage:
+Use the CLI for quick queries or the web UI for a more interactive experience.
