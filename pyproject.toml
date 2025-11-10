@@ -1,0 +1,20 @@
+[project]
+name = "rag-one"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "black>=25.9.0",
+    "chromadb>=1.3.4",
+    "isort>=7.0.0",
+    "langchain>=1.0.5",
+    "langchain-classic>=1.0.0",
+    "langchain-community>=0.4.1",
+    "langchain-text-splitters>=1.0.0",
+    "ollama>=0.6.0",
+    "pypdf>=6.2.0",
+    "pysqlite3-binary>=0.5.4",
+    "python-docx>=1.2.0",
+    "sentence-transformers>=5.1.2",
+    "streamlit>=1.51.0",
+    "unstructured>=0.18.18",
+]
