@@ -122,19 +122,19 @@ Retrieval converts a user query into an embedding, finds nearest vectors in the 
 ```mermaid
 flowchart TD
     subgraph Ingestion[Indexing Pipeline]
-        A["Documents in data/documents/"] -->|Load| B["Loaders\nPDF/TXT/Word/Excel"]
-        B --> C["Chunking\nRecursiveCharacterTextSplitter\nCHUNK_SIZE / CHUNK_OVERLAP"]
-        C --> D[Embeddings\nOllamaEmbeddings\nEMBEDDING_MODEL]
-        D --> E[Vector Store\nChroma @ data/vectorstore]
+        A["Documents in data/documents/"] -->|Load| B["Loaders<br/>PDF/TXT/Word/Excel"]
+        B --> C["Chunking<br/>RecursiveCharacterTextSplitter<br/>CHUNK_SIZE / CHUNK_OVERLAP"]
+        C --> D[Embeddings<br/>OllamaEmbeddings<br/>EMBEDDING_MODEL]
+        D --> E[Vector Store<br/>Chroma @ data/vectorstore]
     end
 
     subgraph Query[Query-Time Retrieval + Generation]
         Q[User Question] --> QE[Embed Query]
-        QE --> R[Retriever\nTop-K Similar Chunks]
-        R --> P[Prompt Builder\nSystem Prompt + Context + Question]
-        P --> G[LLM\nLLM_MODEL]
+        QE --> R[Retriever<br/>Top-K Similar Chunks]
+        R --> P[Prompt Builder<br/>System Prompt + Context + Question]
+        P --> G[LLM<br/>LLM_MODEL]
         G --> A1[Answer]
-        R -. sources .-> A2["Sources\n(chunk metadata)"]
+        R -. sources .-> A2["Sources<br/>(chunk metadata)"]
     end
 
     E -. provides .-> R
