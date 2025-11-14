@@ -75,8 +75,17 @@ from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 
 import fix_sqlite  # SQLite fix must be first!
-from config import LLM_MODEL, OLLAMA_BASE_URL, SYSTEM_PROMPT, TOP_K_RESULTS
 from document_processor import DocumentProcessor
+from conversation_memory import ConversationMemory
+
+from config import (
+    OLLAMA_BASE_URL,
+    LLM_MODEL,
+    REASONING_MODEL,
+    TOP_K_RESULTS,
+    SYSTEM_PROMPT,
+    DATA_DIR,  # Add this to config.py if not there
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,9 +100,9 @@ class RAGEngine:
     - Expert (reads and answers your question)
     """
 
-    def __init__(self):
+    def __init__(self, conversation_id: Optional[str] = None):
         """Initialize the RAG Engine"""
-        logger.info("Initializing RAG Engine...")
+        logger.info("Initializing RAG Engine with conversation memory...")
 
         # Initialize document processor (handles retrieval)
         self.doc_processor = DocumentProcessor()
@@ -105,47 +114,62 @@ class RAGEngine:
             temperature=0.7,  # Controls randomness (0=deterministic, 1=creative)
         )
 
-        # Create the prompt template
+        # Reasoning LLM for complex tasks
+        self.reasoning_llm = Ollama(
+            model=REASONING_MODEL,
+            base_url=OLLAMA_BASE_URL,
+            temperature=0.7,
+        )
+
+        memory_dir = DATA_DIR / "conversations"
+        self.memory = ConversationMemory(
+            max_history=5,  # Keep last 5 exchanges in context
+            persist_dir=memory_dir
+        )
+
+        self.conversation_id = conversation_id
+        
+        # Load previous conversation if ID provided
+        if conversation_id:
+            try:
+                self.memory.load_conversation(f"{conversation_id}.json")
+                logger.info(f"Loaded conversation: {conversation_id}")
+            except FileNotFoundError:
+                logger.info(f"Starting new conversation: {conversation_id}")
+        
+        # Create prompt template with memory
         self.prompt_template = self._create_prompt_template()
 
-        # Create the QA chain (may fail if vector store isn't ready)
-        self.qa_chain = None
-        try:
-            self.qa_chain = self._create_qa_chain()
-        except Exception as e:
-            logger.error(f"Failed to create QA chain: {e}")
-            self.qa_chain = None
-
-        logger.info("✓ RAG Engine ready!")
+        logger.info(" RAG Engine ready!")
 
     def _create_prompt_template(self) -> PromptTemplate:
         """
-        Create the prompt template for the LLM.
-
-        This is CRUCIAL - it tells the LLM:
-        - What role to play
-        - What context it has
-        - What question to answer
-        - How to behave
+        Create prompt template that includes conversation history.
         """
         template = """
 {system_prompt}
+
+{conversation_history}
 
 Context from documents:
 ---
 {context}
 ---
 
-Question: {question}
+Current Question: {question}
 
-Answer based on the context above. If the answer is not in the context, say "I don't have that information in the documents."
+Instructions:
+1. Consider the conversation history above
+2. Use the document context provided
+3. If the question refers to previous conversation, use that context
+4. If you don't know, say so clearly
 
 Answer:"""
-
+        
         return PromptTemplate(
             template=template,
-            input_variables=["context", "question"],
-            partial_variables={"system_prompt": SYSTEM_PROMPT},
+            input_variables=["context", "question", "conversation_history"],
+            partial_variables={"system_prompt": SYSTEM_PROMPT}
         )
 
     def _create_qa_chain(self):
@@ -179,89 +203,162 @@ Answer:"""
 
         return qa_chain
 
-    def ask(self, question: str) -> Dict[str, Any]:
+    def _process_answer(self, raw_answer: str, use_reasoning: bool) -> tuple[str, Optional[str]]:
         """
-        Ask a question and get an answer!
-
-        This is the main function you'll use.
-
+        Process the raw answer from LLM.
+        Extracts thinking process if using DeepSeek-R1.
+        
+        Args:
+            raw_answer: Raw response from LLM
+            use_reasoning: Whether reasoning model was used
+            
+        Returns:
+            Tuple of (clean_answer, reasoning_process)
+        """
+        if not use_reasoning:
+            # Standard model - no thinking tags
+            return raw_answer, None
+        
+        # DeepSeek-R1 may include <thinking> tags
+        if "<thinking>" in raw_answer and "</thinking>" in raw_answer:
+            try:
+                # Extract thinking process
+                thinking_start = raw_answer.find("<thinking>") + len("<thinking>")
+                thinking_end = raw_answer.find("</thinking>")
+                reasoning = raw_answer[thinking_start:thinking_end].strip()
+                
+                # Extract final answer (after </thinking>)
+                answer = raw_answer[thinking_end + len("</thinking>"):].strip()
+                
+                return answer, reasoning
+            except Exception as e:
+                logger.warning(f"Error parsing thinking tags: {e}")
+                return raw_answer, None
+        else:
+            # No thinking tags found
+            return raw_answer, None
+        
+    def ask(self, question: str, use_memory: bool = True, use_reasoning: bool = False) -> Dict[str, Any]:
+        """
+        Ask a question with conversational memory and optional reasoning mode.
+        
         Args:
             question: Your question
-
+            use_memory: Whether to include conversation history in context
+            use_reasoning: Whether to use DeepSeek-R1 for deeper analysis (slower but more detailed)
+            
         Returns:
-            Dictionary with:
-            - answer: The LLM's response
-            - sources: Which documents were used
-            - context: The actual text chunks retrieved
+            Dictionary with answer, sources, context, and optionally reasoning
         """
-        logger.info(f"Question: {question}")
-
+        logger.info(f"Question: {question} (Reasoning mode: {use_reasoning})")
+        
         # Check if vector store has documents
         stats = self.doc_processor.get_stats()
-        if stats["total_chunks"] == 0:
+        if stats['total_chunks'] == 0:
             return {
-                "answer": "No documents have been processed yet. Please add documents to the data/documents folder and process them first.",
-                "sources": [],
-                "context": [],
+                'answer': "No documents have been processed yet.",
+                'sources': [],
+                'context': [],
+                'reasoning': None
             }
-
+        
         try:
-            # Run the QA chain
-            if self.qa_chain is None:
-                return {
-                    'answer': "The QA chain is not available yet. Please process documents first or check vector store initialization.",
-                    'sources': [],
-                    'context': []
-                }
-
-            result = self.qa_chain.invoke({"query": question})
-
-            # Extract results
-            answer = result["result"]
-            source_docs = result["source_documents"]
-
+            # Get conversation history
+            conversation_history = ""
+            if use_memory and self.memory.messages:
+                conversation_history = self.memory.get_context_string(last_n=3)
+            
+            # Retrieve relevant documents
+            retrieved_docs = self.doc_processor.search(question, k=TOP_K_RESULTS)
+            
+            # Build context from retrieved documents
+            context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+            
+            # Build the full prompt
+            prompt = self.prompt_template.format(
+                context=context,
+                question=question,
+                conversation_history=conversation_history
+            )
+            
+            # Select LLM based on reasoning flag
+            selected_llm = self.reasoning_llm if use_reasoning else self.llm
+            
+            # Generate answer
+            raw_answer = selected_llm.invoke(prompt)
+            
+            # Process answer (extract thinking if present)
+            answer, reasoning = self._process_answer(raw_answer, use_reasoning)
+            
             # Format sources
-            sources = self._format_sources(source_docs)
-
-            # Get context text
-            context = [doc.page_content for doc in source_docs]
-
-            logger.info("✓ Answer generated")
-
-            return {"answer": answer, "sources": sources, "context": context}
-
+            sources = self._format_sources(retrieved_docs)
+            
+            # Add to memory
+            self.memory.add_message('user', question)
+            self.memory.add_message('assistant', answer, {'sources': sources})
+            
+            # Auto-save if conversation_id is set
+            if self.conversation_id:
+                self.memory.save_conversation(f"{self.conversation_id}.json")
+            
+            logger.info("✓ Answer generated with conversational context")
+            
+            return {
+                'answer': answer,
+                'sources': sources,
+                'context': [doc.page_content for doc in retrieved_docs],
+                'reasoning': reasoning  # NEW: DeepSeek's thinking process
+            }
+            
         except Exception as e:
             logger.error(f"Error generating answer: {e}")
-            return {"answer": f"Error: {str(e)}", "sources": [], "context": []}
+            return {
+                'answer': f"Error: {str(e)}",
+                'sources': [],
+                'context': [],
+                'reasoning': None
+            }
+    
+    def get_conversation_summary(self) -> str:
+        """Get summary of current conversation."""
+        return self.memory.get_conversation_summary()
+    
+    def clear_conversation(self):
+        """Clear current conversation memory."""
+        self.memory.clear()
+        logger.info("Conversation memory cleared")
+    
+    def save_conversation(self, filename: Optional[str] = None):
+        """
+        Save current conversation.
+        
+        Args:
+            filename: Optional custom filename (default uses conversation_id)
+        """
+        if not filename:
+            filename = f"{self.conversation_id or 'conversation'}.json"
+        
+        self.memory.save_conversation(filename)
+        logger.info(f"Conversation saved: {filename}")
 
     def _format_sources(self, documents: List[Document]) -> List[str]:
-        """
-        Format source documents into readable references.
-
-        Args:
-            documents: List of source documents
-
-        Returns:
-            List of formatted source strings
-        """
+        """Format source documents into readable references."""
         sources = []
-        seen = set()  # Avoid duplicates
-
+        seen = set()
+        
         for doc in documents:
-            source = doc.metadata.get("source", "Unknown")
-
-            # Add page number if available
-            if "page" in doc.metadata:
+            source = doc.metadata.get('source', 'Unknown')
+            
+            if 'page' in doc.metadata:
                 source = f"{source} (page {doc.metadata['page']})"
-
-            # Add sheet name for Excel
-            if "sheet" in doc.metadata:
+            
+            if 'sheet' in doc.metadata:
                 source = f"{source} (sheet: {doc.metadata['sheet']})"
-
+            
             if source not in seen:
                 sources.append(source)
                 seen.add(source)
-
+        
         return sources
 
     def process_documents(self) -> Dict[str, int]:

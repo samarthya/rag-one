@@ -68,7 +68,10 @@ WINDOWS_IP = "172.22.112.1"  # Replace with your live host IP if it changes (DHC
 OLLAMA_BASE_URL = f"http://{WINDOWS_IP}:11434"  # Base endpoint for both LLM and embedding calls
 
 # Your LLM model
-LLM_MODEL = "gpt-oss:20b"  # Main generation model (swap for smaller/faster if latency is high)
+# LLM_MODEL = "gpt-oss:20b"  # Main generation model (swap for smaller/faster if latency is high)
+LLM_MODEL = "mistral:7b"  # Main generation model (swap for smaller/faster if latency is high)
+
+REASONING_MODEL = "deepseek-r1:8b"
 
 # Embedding model (we'll download this via Ollama)
 EMBEDDING_MODEL = "nomic-embed-text"  # Embedding model optimized for semantic similarity search

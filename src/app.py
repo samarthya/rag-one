@@ -58,7 +58,10 @@ def load_rag_engine():
     @st.cache_resource ensures it's only loaded once and shared across sessions.
     This is important for performance!
     """
-    return RAGEngine()
+    import uuid
+    # Create unique conversation ID
+    conversation_id = str(uuid.uuid4())
+    return RAGEngine(conversation_id=conversation_id)
 
 
 def save_uploaded_file(uploaded_file) -> bool:
@@ -227,6 +230,10 @@ def main():
 
     # Initialize RAG engine
     rag = load_rag_engine()
+    
+    if rag.memory.messages:
+        with st.expander("📊 Conversation Summary"):
+            st.info(rag.get_conversation_summary())
 
     # Check if knowledge base is empty
     stats = rag.get_stats()
@@ -236,60 +243,98 @@ def main():
         )
         return
 
-    # Initialize chat history in session state
+    # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
-
+        if rag.memory.messages:
+            for msg in rag.memory.messages:
+                st.session_state.messages.append({
+                    "role": msg['role'],
+                    "content": msg['content'],
+                    "sources": msg['metadata'].get('sources', []),
+                    "reasoning": msg['metadata'].get('reasoning', None)  # NEW
+                })
+    
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-
-            # Show sources if available
+            
+            # Show reasoning if available - NEW!
+            if message["role"] == "assistant" and message.get("reasoning"):
+                with st.expander("🧠 Reasoning Process"):
+                    st.text(message["reasoning"])
+            
+            # Show sources
             if message["role"] == "assistant" and "sources" in message:
                 if message["sources"]:
                     with st.expander("📚 Sources"):
                         for source in message["sources"]:
                             st.caption(f"• {source}")
-
+    
+    # Add reasoning mode toggle - NEW!
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        use_reasoning = st.checkbox(
+            "🧠 Reasoning", 
+            value=False,
+            help="Use DeepSeek-R1 for deeper analysis (slower but more detailed)"
+        )
+    
     # Chat input
     if prompt := st.chat_input("Ask me anything..."):
-        # Add user message to chat history
+        # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
-
-        # Display user message
+        
         with st.chat_message("user"):
             st.markdown(prompt)
-
+        
         # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                # Get answer from RAG engine
-                result = rag.ask(prompt)
-
+            status_text = "Thinking deeply..." if use_reasoning else "Thinking..."
+            with st.spinner(status_text):
+                # Call RAG engine with reasoning flag
+                result = rag.ask(prompt, use_memory=True, use_reasoning=use_reasoning)
+                
                 # Display answer
-                st.markdown(result["answer"])
-
+                st.markdown(result['answer'])
+                
+                # Display reasoning if available - NEW!
+                if result.get('reasoning'):
+                    with st.expander("🧠 Reasoning Process"):
+                        st.text(result['reasoning'])
+                
                 # Display sources
-                if result["sources"]:
+                if result['sources']:
                     with st.expander("📚 Sources"):
-                        for source in result["sources"]:
+                        for source in result['sources']:
                             st.caption(f"• {source}")
-
-                # Add assistant response to chat history
-                st.session_state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": result["answer"],
-                        "sources": result["sources"],
-                    }
-                )
-
-    # Clear chat button
-    if st.session_state.messages:
-        if st.button("🗑️ Clear Chat History"):
+                
+                # Add to session state
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result['answer'],
+                    "sources": result['sources'],
+                    "reasoning": result.get('reasoning')  # NEW
+                })
+    
+    # Conversation controls
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("🗑️ Clear Chat"):
             st.session_state.messages = []
+            rag.clear_conversation()
             st.rerun()
+    
+    with col2:
+        if st.button("💾 Save Conversation"):
+            rag.save_conversation()
+            st.success("Conversation saved!")
+    
+    with col3:
+        if st.button("📊 View Summary"):
+            st.info(rag.get_conversation_summary())
 
 
 if __name__ == "__main__":
