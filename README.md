@@ -76,8 +76,8 @@ You should see sample output
             }
         },
         {
-            "name": "gpt-oss:20b",
-            "model": "gpt-oss:20b",
+            "name": "mistral:7b",
+            "model": "mistral:7b",
             "modified_at": "2025-10-20T18:12:35.8918588-04:00",
             "size": 13793441244,
             "digest": "17052f91a42e97930aa6e28a6c6c06a983e6a58dbb00434885a0cf5313e376f7",

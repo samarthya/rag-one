@@ -67,10 +67,10 @@ VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 WINDOWS_IP = "172.22.112.1"  # Replace with your live host IP if it changes (DHCP can reassign)
 OLLAMA_BASE_URL = f"http://{WINDOWS_IP}:11434"  # Base endpoint for both LLM and embedding calls
 
-# Your LLM model
-# LLM_MODEL = "gpt-oss:20b"  # Main generation model (swap for smaller/faster if latency is high)
-LLM_MODEL = "mistral:7b"  # Main generation model (swap for smaller/faster if latency is high)
+# Your LLM model (primary generation model). Swap for smaller/faster models if latency is high.
+LLM_MODEL = "mistral:7b"
 
+# Optional: a separate model optimized for multi-step or heavier reasoning tasks.
 REASONING_MODEL = "deepseek-r1:8b"
 
 # Embedding model (we'll download this via Ollama)
